@@ -1,0 +1,103 @@
+import streamlit as st
+
+# ==========================================
+# 假设从上方代码继承的变量 (用于演示)
+# ==========================================
+daily_total_revenue = 25920  # 今日总营业额
+daily_hours_budget = 85      # 系统动态批复工时
+daily_elec_budget = 850      # 系统标准耗电
+daily_gas_budget = 82        # 系统标准耗气
+target_total = 803500        # 全月目标
+
+# --- 新增模拟数据（实际应用中可接入数据库） ---
+mtd_revenue = 415000         # 本月截至昨日累计营业额
+days_passed = 15             # 本月已过天数
+days_in_month = 31           # 本月总天数
+
+st.divider()
+
+# ==========================================
+# 优化模块 1：全月目标达成感 (进度条与冲刺提示)
+# ==========================================
+st.subheader("🏆 本月营业额冲刺进度 (MTD)")
+
+# 计算进度
+current_total = mtd_revenue + daily_total_revenue
+progress_pct = current_total / target_total
+remaining_revenue = target_total - current_total
+run_rate = remaining_revenue / (days_in_month - days_passed) if (days_in_month - days_passed) > 0 else 0
+
+# 进度条展示
+st.progress(min(progress_pct, 1.0))
+
+col_prog1, col_prog2, col_prog3 = st.columns(3)
+col_prog1.metric("本月累计达成", f"¥ {current_total:,.0f}", f"目标完成率 {progress_pct*100:.1f}%")
+col_prog2.metric("距离目标还差", f"¥ {remaining_revenue:,.0f}")
+col_prog3.metric("剩余天数每日需达成", f"¥ {run_rate:,.0f}", "接下来的日均流水底线", delta_color="inverse")
+
+if run_rate > 28000: # 假设28000是门店的产能极限预警
+    st.warning("⚠️ 提醒：剩余每日目标流水压力较大，建议立刻向区域经理申请周末外卖营销活动支持！")
+else:
+    st.success("🎉 保持当前趋势，稳步达成全月目标！")
+
+st.divider()
+
+# ==========================================
+# 优化模块 2：店长核心可控成本红绿灯 (Actual vs Budget)
+# ==========================================
+st.subheader("🚨 今日可控成本红绿灯 (店长每日复盘)")
+st.caption("填入今日实际发生数据，系统将自动核算透支/结余金额。")
+
+# 侧边栏或主界面的实际数据输入
+col_input1, col_input2, col_input3 = st.columns(3)
+actual_hours = col_input1.number_input("实际打卡工时 (h)", value=88.0, step=1.0)
+actual_elec = col_input2.number_input("实际耗电量 (度)", value=880.0, step=10.0)
+actual_gas = col_input3.number_input("实际耗气量 (字)", value=80.0, step=1.0)
+
+# 差异计算 (实际 - 批复预算)
+hours_diff = actual_hours - daily_hours_budget
+elec_diff = actual_elec - daily_elec_budget
+gas_diff = actual_gas - daily_gas_budget
+
+# 转化为直观的金额浪费/节约 (假设时薪18.86，电费0.89，气费3.31)
+hourly_wage = 18.86
+elec_price = 0.89
+gas_price = 3.31
+
+money_lost_hours = hours_diff * hourly_wage
+money_lost_elec = elec_diff * elec_price
+money_lost_gas = gas_diff * gas_price
+
+st.markdown("#### 📊 今日管控结果")
+res1, res2, res3 = st.columns(3)
+
+# 工时红绿灯
+if hours_diff > 0:
+    res1.error(f"**工时超编 {hours_diff} h**\n\n💸 利润流失 ¥ {money_lost_hours:.0f}")
+elif hours_diff < 0:
+    res1.success(f"**工时节约 {abs(hours_diff)} h**\n\n💰 增加利润 ¥ {abs(money_lost_hours):.0f}")
+else:
+    res1.info("**工时完美压线**\n\n⚖️ 零偏差")
+
+# 电费红绿灯
+if elec_diff > 0:
+    res2.error(f"**耗电超标 {elec_diff} 度**\n\n💸 利润流失 ¥ {money_lost_elec:.0f}")
+elif elec_diff < 0:
+    res2.success(f"**耗电节约 {abs(elec_diff)} 度**\n\n💰 增加利润 ¥ {abs(money_lost_elec):.0f}")
+else:
+    res2.info("**耗电符合标准**\n\n⚖️ 零偏差")
+
+# 气费红绿灯
+if gas_diff > 0:
+    res3.error(f"**耗气超标 {gas_diff} 字**\n\n💸 利润流失 ¥ {money_lost_gas:.0f}")
+elif gas_diff < 0:
+    res3.success(f"**耗气节约 {abs(gas_diff)} 字**\n\n💰 增加利润 ¥ {abs(money_lost_gas):.0f}")
+else:
+    res3.info("**耗气符合标准**\n\n⚖️ 零偏差")
+
+# 总结论
+total_lost = money_lost_hours + money_lost_elec + money_lost_gas
+if total_lost > 0:
+    st.error(f"🛑 **今日总结：三大可控项合计吃掉利润 ¥ {total_lost:.0f}。请立刻核对明天早班排班表及打烊关灯闭水动作！**")
+else:
+    st.success(f"🌟 **今日总结：三大可控项合计为您抠出利润 ¥ {abs(total_lost):.0f}！优秀的门店管控！**")
