@@ -44,8 +44,14 @@ gas_price = col_p3.number_input("气价", value=3.31, step=0.1)
 st.sidebar.markdown("---")
 st.sidebar.header("⏱️ 3. 营业时间与特殊项")
 business_hours = st.sidebar.selectbox("营业时间", ["无早无夜", "有早无夜", "全天/含夜宵"])
-daily_night_rev = 0
 
+# 新增：动态控制早点营收占比
+breakfast_ratio = 0.0
+if business_hours in ["有早无夜", "全天/含夜宵"]:
+    breakfast_ratio_display = st.sidebar.slider("早点营收占比预估 (%)", min_value=0, max_value=100, value=20, step=1, help="用于系统推算早班补偿工时，底稿默认水平为20%")
+    breakfast_ratio = breakfast_ratio_display / 100.0
+
+daily_night_rev = 0
 if business_hours == "全天/含夜宵":
     daily_night_rev = st.sidebar.number_input("预估夜宵日营业额 (元)", value=1000, step=100, help="用于系统推算夜班补偿工时")
 
@@ -72,8 +78,8 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
         
     takeaway_hrs = excel_round((daily_delivery - 5000) / 250)
     
-    # 自动切分 20% 作为早点预估额
-    daily_breakfast_rev = daily_total * 0.2
+    # 根据前端设置的动态比例切分早点预估额
+    daily_breakfast_rev = daily_total * breakfast_ratio
     
     if business_hours == "无早无夜":
         bh_adj = -5
