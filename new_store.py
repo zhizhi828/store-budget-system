@@ -16,9 +16,18 @@ st.divider()
 # ==========================================
 # 侧边栏：核心输入区
 # ==========================================
-st.sidebar.header("🛠️ 1. 基础投资与租金")
+st.sidebar.header("🛠️ 1. 基础投资与租金面积")
 initial_investment = st.sidebar.number_input("初始总投资预估 (元)", min_value=0, value=350000, step=10000)
-monthly_rent = st.sidebar.number_input("门店月房租 (元)", min_value=0, value=35000, step=1000)
+
+# 修改为年房租输入，并增加面积
+annual_rent = st.sidebar.number_input("门店年房租 (元)", min_value=0, value=420000, step=10000)
+monthly_rent = annual_rent / 12
+st.sidebar.caption(f"🔄 折合月房租: ¥ {monthly_rent:,.0f}")
+
+usable_area = st.sidebar.number_input("门店使用面积 (平米)", min_value=1.0, value=100.0, step=5.0)
+daily_rent_per_sqm = (annual_rent / 365) / usable_area
+st.sidebar.caption(f"📐 单平米单日租金: ¥ {daily_rent_per_sqm:,.2f} /天/平")
+
 dorm_rent = st.sidebar.number_input("宿舍月房租 (元)", min_value=0, value=7000, step=500)
 
 store_type = st.sidebar.radio("门店类型", ["直营 (品牌费 1%)", "加盟 (品牌费 2%)"], horizontal=True)
@@ -26,12 +35,10 @@ brand_fee_rate = 0.01 if "直营" in store_type else 0.02
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ 2. 运营与能耗参数")
-# 转换为整数百分比显示要求
 takeaway_ratio_display = st.sidebar.slider("外卖营收占比预估 (%)", min_value=0, max_value=100, value=40, step=5)
 takeaway_ratio = takeaway_ratio_display / 100.0
 
 region = st.sidebar.radio("门店所在区域", ["北京", "外埠"], horizontal=True)
-# 精准对齐 Excel 底稿的大盘时薪
 default_wage = 19.547 if region == "北京" else 17.267
 hourly_wage = st.sidebar.number_input("当地大盘小时工资 (元/h)", value=default_wage, step=0.1, format="%.3f")
 
@@ -45,7 +52,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("⏱️ 3. 营业时间与特殊项")
 business_hours = st.sidebar.selectbox("营业时间", ["无早无夜", "有早无夜", "全天/含夜宵"])
 
-# 新增：动态控制早点营收占比
 breakfast_ratio = 0.0
 if business_hours in ["有早无夜", "全天/含夜宵"]:
     breakfast_ratio_display = st.sidebar.slider("早点营收占比预估 (%)", min_value=0, max_value=100, value=20, step=1, help="用于系统推算早班补偿工时，底稿默认水平为20%")
@@ -67,10 +73,8 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
     daily_total = daily_dine_in + daily_delivery
     monthly_revenue = daily_total * days
     
-    # 【1】底层常量基座 (各项固定分摊杂费折算单月)
     backend_fixed_cost = 8893.11 
     
-    # 【2】动态工时与人工成本 (严格按 Excel 阶梯与进位测算)
     if daily_dine_in >= 4000:
         dine_in_hrs = excel_round((daily_dine_in - 4000) / 200)
     else:
@@ -78,7 +82,6 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
         
     takeaway_hrs = excel_round((daily_delivery - 5000) / 250)
     
-    # 根据前端设置的动态比例切分早点预估额
     daily_breakfast_rev = daily_total * breakfast_ratio
     
     if business_hours == "无早无夜":
@@ -104,11 +107,10 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
     salary_cost = monthly_hours * hourly_wage
     staff_meal = (monthly_hours / 234) * 200
     
-    # 【3】多维度绩效积分打分制系统 
     rev_points = 1.5 if daily_total < 7000 else (2.5 if daily_total < 9000 else (3.5 if daily_total < 13000 else (4.5 if daily_total < 18000 else 5.5)))
     dine_points = 0.0 if daily_dine_in < 4000 else (0.5 if daily_dine_in < 5000 else (1.0 if daily_dine_in < 6000 else (1.5 if daily_dine_in < 8000 else (2.0 if daily_dine_in < 10000 else 2.5))))
     
-    total_points = rev_points + dine_points + 1.0 # 门店性质固定 1 分
+    total_points = rev_points + dine_points + 1.0 
     
     if total_points <= 3.0:    
         performance_bonus = 2400
@@ -117,7 +119,6 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
     else:                      
         performance_bonus = 3600
         
-    # 【4】动态能源与其他成本
     if "无燃气" in has_gas:
         elec_cost = (0.0268 * monthly_revenue + 3139.3) * elec_price
         gas_cost = 0
@@ -172,18 +173,21 @@ with col1:
     st.success(f"**日总额: ¥ {target_be:,.0f}**")
     st.write(f"🍽️ 日堂食: ¥ {target_be*(1-takeaway_ratio):,.0f}")
     st.write(f"🛵 日外卖: ¥ {target_be*takeaway_ratio:,.0f}")
+    st.write(f"📏 日坪效: ¥ {target_be/usable_area:,.0f} /平米")
 
 with col2:
     st.markdown("#### 🟡 18个月 (标准线)")
     st.warning(f"**日总额: ¥ {target_18m:,.0f}**")
     st.write(f"🍽️ 日堂食: ¥ {target_18m*(1-takeaway_ratio):,.0f}")
     st.write(f"🛵 日外卖: ¥ {target_18m*takeaway_ratio:,.0f}")
+    st.write(f"📏 日坪效: ¥ {target_18m/usable_area:,.0f} /平米")
 
 with col3:
     st.markdown("#### 🔴 12个月 (极限线)")
     st.error(f"**日总额: ¥ {target_1y:,.0f}**")
     st.write(f"🍽️ 日堂食: ¥ {target_1y*(1-takeaway_ratio):,.0f}")
     st.write(f"🛵 日外卖: ¥ {target_1y*takeaway_ratio:,.0f}")
+    st.write(f"📏 日坪效: ¥ {target_1y/usable_area:,.0f} /平米")
 
 with col4:
     custom_months = st.number_input("🎛️ 自定义回本月数", value=24, min_value=3, max_value=60, step=1)
@@ -191,6 +195,7 @@ with col4:
     st.info(f"**日总额: ¥ {target_custom:,.0f}**")
     st.write(f"🍽️ 日堂食: ¥ {target_custom*(1-takeaway_ratio):,.0f}")
     st.write(f"🛵 日外卖: ¥ {target_custom*takeaway_ratio:,.0f}")
+    st.write(f"📏 日坪效: ¥ {target_custom/usable_area:,.0f} /平米")
 
 st.divider()
 
@@ -210,6 +215,7 @@ with col_in3:
         actual_payback = initial_investment / exp_ebitda
         st.success(f"**预测回本周期：{actual_payback:.1f} 个月**")
         st.write(f"每月摊销前利润：¥ {exp_ebitda:,.0f}")
+        st.write(f"预期日坪效：¥ {(exp_dine_in + exp_delivery)/usable_area:,.0f} /平米")
     else:
         st.error("**预测回本周期：无法回本 (亏损)**")
         st.write(f"每月摊销前亏损：¥ {exp_ebitda:,.0f}")
