@@ -10,16 +10,20 @@ st.divider()
 # 侧边栏：核心输入区
 # ==========================================
 st.sidebar.header("🛠️ 1. 基础投资与租金")
-initial_investment = st.sidebar.number_input("初始总投资预估 (元)", min_value=0, value=382000, step=10000)
+initial_investment = st.sidebar.number_input("初始总投资预估 (元)", min_value=0, value=350000, step=10000)
 monthly_rent = st.sidebar.number_input("门店月房租 (元)", min_value=0, value=35000, step=1000)
-dorm_rent = st.sidebar.number_input("宿舍月房租 (元)", min_value=0, value=4600, step=500)
+dorm_rent = st.sidebar.number_input("宿舍月房租 (元)", min_value=0, value=7000, step=500)
+
+store_type = st.sidebar.radio("门店类型", ["直营 (品牌费1%)", "加盟 (品牌费2%)"], horizontal=True)
+brand_fee_rate = 0.01 if "直营" in store_type else 0.02
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ 2. 运营与能耗参数")
 takeaway_ratio = st.sidebar.slider("外卖营收占比预估", min_value=0.0, max_value=1.0, value=0.40, step=0.05)
 
 region = st.sidebar.radio("门店所在区域", ["北京", "外埠"], horizontal=True)
-default_wage = 18.86 if region == "北京" else 17.17
+# 严格对齐底稿时薪
+default_wage = 19.55 if region == "北京" else 17.27
 hourly_wage = st.sidebar.number_input("当地大盘小时工资 (元/h)", value=default_wage, step=0.1)
 
 has_gas = st.sidebar.radio("门店能源配置", ["有燃气 (非纯电模型)", "无燃气 (纯电模型)"], horizontal=True)
@@ -29,34 +33,103 @@ elec_price = col_p2.number_input("电价", value=0.89, step=0.05)
 gas_price = col_p3.number_input("气价", value=3.31, step=0.1)
 
 st.sidebar.markdown("---")
-st.sidebar.header("⏱️ 3. 目标回收期设置")
-custom_months = st.sidebar.slider("自定义回本目标 (个月)", min_value=3, max_value=60, value=24, step=1)
+st.sidebar.header("⏱️ 3. 营业时间与特殊项")
+business_hours = st.sidebar.selectbox("营业时间", ["无早无夜", "有早无夜", "全天/含夜宵"])
+daily_breakfast_rev = 0
+daily_night_rev = 0
+
+if business_hours != "无早无夜":
+    daily_breakfast_rev = st.sidebar.number_input("预估早点日营业额 (元)", value=1600, step=100, help="仅用于系统推算早班补偿工时")
+if business_hours == "全天/含夜宵":
+    daily_night_rev = st.sidebar.number_input("预估夜宵日营业额 (元)", value=1000, step=100, help="仅用于系统推算夜班补偿工时")
+
+op_adjustment = st.sidebar.selectbox("其他调整项", [
+    "无", "手工包子", "凉菜", "肉/馅饼", "两项手工", "三项手工", "独立面点/三手", "独立后厨", "二层/二项手工"
+])
 
 st.sidebar.markdown("---")
 st.sidebar.header("📊 4. 核心费用参数 (系统默认)")
 gross_margin = st.sidebar.number_input("预估毛利率", value=0.55, step=0.01)
 platform_fee = st.sidebar.number_input("外卖平台综合扣点", value=0.2131, step=0.005, format="%.4f")
-material_and_finance_rate = st.sidebar.number_input("物料及规费占比", value=0.0195, step=0.001, format="%.4f")
-locked_fixed_cost = st.sidebar.number_input("单月固定杂费预估 (元)", value=11893, step=500, help="含基础绩效、清运、洗碗机、税费等")
+# 物料消耗(约0.77%) + 财务规费(约0.18%)，对齐Excel变动成本
+material_and_finance_rate = st.sidebar.number_input("物料及财税规费占比", value=0.0095, step=0.001, format="%.4f")
+
 
 # ==========================================
 # 核心底层函数：计算运营总成本
 # ==========================================
 def calc_ops_cost(daily_dine_in, daily_delivery):
     days = 30.4
-    monthly_revenue = (daily_dine_in + daily_delivery) * days
+    daily_total = daily_dine_in + daily_delivery
+    monthly_revenue = daily_total * days
     
-    # 1. 动态工时与人工成本
-    base_hours = 63
-    dine_in_hours = (daily_dine_in - 4000) / 200 if daily_dine_in >= 4000 else (daily_dine_in - 4000) / 300
-    takeaway_hours = (daily_delivery - 5000) / 250
-    daily_hours = base_hours + dine_in_hours + takeaway_hours
+    # 【对齐点1】底层常量：高度还原底稿的各项固定分摊杂费（折算为月）
+    # 包含：宿舍水电补贴、清运、排烟、灭蟑、洗碗机、维修、办公、IT、外事服务等合计
+    backend_fixed_cost = 8900 
+    
+    # 【对齐点2】动态工时与人工成本（嵌套IF逻辑还原）
+    dine_in_hrs = round((daily_dine_in - 4000) / 200, 0) if daily_dine_in >= 4000 else round((daily_dine_in - 4000) / 300, 0)
+    takeaway_hrs = round((daily_delivery - 5000) / 250, 0)
+    
+    if business_hours == "无早无夜":
+        bh_adj = -5
+    else:
+        bh_adj = round((daily_breakfast_rev - 1000) / 250, 0) if daily_breakfast_rev >= 1000 else 0
+        
+    if business_hours in ["无早无夜", "有早无夜"]:
+        night_adj = 0
+    else:
+        night_adj = round((daily_night_rev - 1000) / 250 + 10, 0) if daily_night_rev >= 1000 else round(daily_night_rev * 0.01, 0)
+        
+    adj_map = {
+        "手工包子": 3, "凉菜": 3, "肉/馅饼": 3, 
+        "两项手工": 6, "三项手工": 9, "独立面点/三手": 12, 
+        "独立后厨": 18, "二层/二项手工": 33, "无": 0
+    }
+    op_adj = adj_map.get(op_adjustment, 0)
+    
+    daily_hours = 63 + dine_in_hrs + takeaway_hrs + bh_adj + night_adj + op_adj
     monthly_hours = daily_hours * days
     
     salary_cost = monthly_hours * hourly_wage
     staff_meal = (monthly_hours / 234) * 200
     
-    # 2. 动态能源成本
+    # 【对齐点3】多维度绩效积分打分制系统 (复刻《餐厅绩效核算明细--新规则》)
+    if daily_total < 7000:
+        rev_points = 1.5
+    elif daily_total < 9000:
+        rev_points = 2.5
+    elif daily_total < 13000:
+        rev_points = 3.5
+    elif daily_total < 18000:
+        rev_points = 4.5
+    else:
+        rev_points = 5.5
+        
+    if daily_dine_in < 4000:
+        dine_points = 0.0
+    elif daily_dine_in < 5000:
+        dine_points = 0.5
+    elif daily_dine_in < 6000:
+        dine_points = 1.0
+    elif daily_dine_in < 8000:
+        dine_points = 1.5
+    elif daily_dine_in < 10000:
+        dine_points = 2.0
+    else:
+        dine_points = 2.5
+        
+    nature_points = 1.0 
+    total_points = rev_points + dine_points + nature_points
+    
+    if total_points <= 3.0:    # D 级难度
+        performance_bonus = 2400
+    elif total_points <= 5.0:  # C 级难度
+        performance_bonus = 3000
+    else:                      # B 级难度及以上
+        performance_bonus = 3600
+        
+    # 【对齐点4】动态能源与其他变动成本
     water_cost = (0.0003 * monthly_revenue + 7.8348) * water_price
     if has_gas == "有燃气 (非纯电模型)":
         elec_cost = (0.0234 * monthly_revenue + 1884.1) * elec_price
@@ -66,20 +139,22 @@ def calc_ops_cost(daily_dine_in, daily_delivery):
         gas_cost = 0
     energy_cost = water_cost + elec_cost + gas_cost
     
-    # 3. 开放式参数调整：平台、食材与其他变动比例成本
     food_cost = monthly_revenue * (1 - gross_margin)
     platform_cost = (daily_delivery * days * platform_fee) + (daily_dine_in * days * 0.0008)
     material_and_finance = monthly_revenue * material_and_finance_rate
+    brand_cost = monthly_revenue * brand_fee_rate
     
-    return (monthly_rent + dorm_rent + locked_fixed_cost + 
+    # 汇总计算
+    return (monthly_rent + dorm_rent + backend_fixed_cost + performance_bonus + 
             salary_cost + staff_meal + energy_cost + 
-            food_cost + platform_cost + material_and_finance)
+            food_cost + platform_cost + material_and_finance + brand_cost)
 
 def calculate_monthly_profit(daily_revenue, payback_months):
     d_dine = daily_revenue * (1 - takeaway_ratio)
     d_deli = daily_revenue * takeaway_ratio
     ops_cost = calc_ops_cost(d_dine, d_deli)
-    amortization = initial_investment / payback_months
+    # Excel 摊销折旧测算规则，保底按回本目标计算
+    amortization = initial_investment / payback_months if payback_months else 0
     return (daily_revenue * 30.4) - ops_cost - amortization
 
 def find_target_revenue(payback_months):
@@ -97,7 +172,7 @@ def find_target_revenue(payback_months):
 target_be = find_target_revenue(60) 
 target_18m = find_target_revenue(18)
 target_1y = find_target_revenue(12)
-target_custom = find_target_revenue(custom_months)
+target_custom = find_target_revenue(24)
 
 # ==========================================
 # 主界面展示区：模块一 (倒推日均目标)
@@ -129,7 +204,8 @@ with col3:
     st.caption(f"要求月利润: ¥ {initial_investment/12:,.0f}")
 
 with col4:
-    st.markdown(f"#### 🎛️ {custom_months}个月 (自定义)")
+    custom_months = st.number_input("🎛️ 自定义回本目标 (月)", value=24, min_value=3, max_value=60, step=1)
+    target_custom = find_target_revenue(custom_months)
     st.info(f"**日总额: ¥ {target_custom:,.0f}**")
     st.write(f"🍽️ 日堂食: ¥ {target_custom*(1-takeaway_ratio):,.0f}")
     st.write(f"🛵 日外卖: ¥ {target_custom*takeaway_ratio:,.0f}")
